@@ -1,0 +1,118 @@
+name: Build WEX Armoury APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Unzip and Prepare Project
+        run: |
+          unzip -o "*.zip" -d project_src
+          DIR=$(dirname "$(find project_src -name "settings.gradle*" | head -n 1)")
+          echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
+          python3 - << 'EOF'
+          import glob, os
+
+          root = os.environ["PROJECT_DIR"]
+
+          open(os.path.join(root, "settings.gradle"), "w").write("""pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "WexArmoury"
+          include ':app'
+          """)
+
+          open(os.path.join(root, "build.gradle"), "w").write("""plugins {
+              id 'com.android.application' version '8.2.2' apply false
+          }
+          tasks.register('clean', Delete) {
+              delete rootProject.layout.buildDirectory
+          }
+          """)
+
+          open(os.path.join(root, "app", "build.gradle"), "w").write("""plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.wex.armoury'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.wex.armoury"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0.0"
+                  testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+                  debug {
+                      applicationIdSuffix ""
+                      debuggable true
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.android.material:material:1.11.0'
+          }
+          """)
+
+          for j in glob.glob(os.path.join(root, "**/*.java"), recursive=True):
+              t = open(j, encoding="utf-8", errors="ignore").read()
+              t = t.replace(
+                  'return "{"freeRamMb":1850,"totalRamMb":4096,"batteryTempC":33.5,"batteryLevel":85,"freeStorageGb":42.5,"totalStorageGb":64.0,"dndActive":false,"overlayActive":false}";',
+                  'return "{\\"freeRamMb\\":1850,\\"totalRamMb\\":4096,\\"batteryTempC\\":33.5,\\"batteryLevel\\":85,\\"freeStorageGb\\":42.5,\\"totalStorageGb\\":64.0,\\"dndActive\\":false,\\"overlayActive\\":false}";'
+              )
+              diff = t.count("{") - t.count("}")
+              if diff > 0:
+                  t += "\n" + "}\n" * diff
+              open(j, "w", encoding="utf-8").write(t)
+          EOF
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
+
+      - name: Build Debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: gradle assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: WexArmoury-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          
