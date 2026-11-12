@@ -16,6 +16,7 @@ jobs:
         run: |
           unzip -o "*.zip" -d project_src
           DIR=$(dirname "$(find project_src -name "settings.gradle*" | head -n 1)")
+          export PROJECT_DIR="$DIR"
           echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
           python3 - << 'EOF'
           import glob, os
@@ -82,6 +83,12 @@ jobs:
               implementation 'com.google.android.material:material:1.11.0'
           }
           """)
+
+          manifest_path = os.path.join(root, "app", "src", "main", "AndroidManifest.xml")
+          if os.path.exists(manifest_path):
+              m = open(manifest_path, encoding="utf-8", errors="ignore").read()
+              m = m.replace('package="com.wex.armoury"', '')
+              open(manifest_path, "w", encoding="utf-8").write(m)
 
           for j in glob.glob(os.path.join(root, "**/*.java"), recursive=True):
               t = open(j, encoding="utf-8", errors="ignore").read()
